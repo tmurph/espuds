@@ -357,6 +357,13 @@ be used for major modes."
       (setq message (s-replace "\\\"" "\"" message))
       (cl-assert (-contains? (-map 's-trim ecukes-message-log) message) nil msg message))))
 
+(Then "^I should not see message \"\\(.+\\)\"$"
+  "Asserts that MESSAGE has not been printed."
+  (lambda (message)
+    (let ((msg "Expected '%s' to not be included in the list of printed messages, but was."))
+      (setq message (s-replace "\\\"" "\"" message))
+      (cl-assert (not (-contains? (-map 's-trim ecukes-message-log) message)) nil msg message))))
+
 (Given "^there is no region selected$"
   "Deactivates mark."
   (lambda ()
