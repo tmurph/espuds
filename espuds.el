@@ -504,6 +504,50 @@ be used for major modes."
   (lambda ()
     (delete-other-windows)))
 
+;;; This is a pretty enormous hack.  We're going to advise `ecukes-steps-find',
+;;; the function responsible for grabbing the step-def that matches the next
+;;; step.  Before `ecukes-steps-find' returns the step-def, it's going to call a
+;;; :filter-return function that (1) removes itself from `ecukes-steps-find' and
+;;; then (2) wraps the step-def-fn in an appropriate :around function that will
+;;; catch the expected error.  When the step-def-fn fires, it's :around function
+;;; will also remove itself from the step-def-fn through an unwind-protect
+;;; clause.  Are we having fun yet?
+;;;
+;;; Oh, also, did I mention that nothing in the espuds or ecukes libraries tries
+;;; to use lexical binding?  And for mysterious reasons that I don't understand,
+;;; I can't just get what I want by turning it on for just this file.  So fun.
+(Then "^I should see error \"\\(.+\\)\"$"
+  "Wraps the next step body with a one-shot condition-case form."
+  (lambda (error-type)
+    (cl-assert
+     (get (intern-soft error-type) 'error-message)
+     nil
+     "No matching error type found for '%S'"
+     error-type)
+    (let* ((around-advice-name "espuds-around-step-def-fn")
+           (filter-return-advice-name "espuds-filter-return-step-def")
+           (filter-return-advice-fn
+            (eval `(lambda (retval)
+                     (let ((around-advice-fn
+                            (eval '(lambda (orig-fn &rest args)
+                                     (condition-case err
+                                         (unwind-protect
+                                             (apply orig-fn args)
+                                           (remove-function
+                                            (ecukes-step-def-fn retval)
+                                            ,around-advice-name))
+                                       (,(intern-soft error-type))))
+                                  `((retval . ,retval)))))
+                       (advice-remove 'ecukes-steps-find ,filter-return-advice-name)
+                       (add-function :around (ecukes-step-def-fn retval)
+                                     around-advice-fn
+                                     '((name . ,around-advice-name))))
+                     retval)
+                  t)))
+      (advice-add 'ecukes-steps-find
+                  :filter-return filter-return-advice-fn
+                  `((name . ,filter-return-advice-name))))))
+
 (provide 'espuds)
 
 ;;; espuds.el ends here
